@@ -17,7 +17,7 @@ jobs:
 
     steps:
     # =========================
-    # 1. Checkout Repository
+    # 1. Checkout Repo
     # =========================
     - name: Checkout Code
       uses: actions/checkout@v3
@@ -42,7 +42,8 @@ jobs:
           pandas \
           scikit-learn \
           matplotlib \
-          seaborn
+          seaborn \
+          joblib
 
     # =========================
     # 4. Login Docker Hub
@@ -61,11 +62,11 @@ jobs:
         mlflow run MLProject --env-manager=local
 
     # =========================
-    # 6. Build Docker Image from MLflow Model
+    # 6. Build Docker Image
     # =========================
     - name: Build Docker Image with MLflow
       run: |
-        # Ambil Run ID terbaru dari tracking server (DagsHub)
+        # Ambil run ID terbaru (MLflow Project parent run)
         run_id=$(python - <<EOF
         import mlflow
         runs = mlflow.search_runs(max_results=1, order_by=["start_time DESC"])
@@ -75,13 +76,11 @@ jobs:
 
         echo "✅ Latest Run ID: $run_id"
 
-        # Debug isi artefak (HARUS ADA 'model/')
-        echo "📦 Artifact paths:"
+        # Debug: cek artefak
         python - <<EOF
         import mlflow
         client = mlflow.tracking.MlflowClient()
-        artifacts = client.list_artifacts("$run_id")
-        print([a.path for a in artifacts])
+        print("📦 Artifact paths:", [a.path for a in client.list_artifacts("$run_id")])
         EOF
 
         # Build Docker image dari MLflow Model
