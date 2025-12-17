@@ -130,6 +130,11 @@ with open("model/requirements.txt", "w") as f:
 
 mlflow.log_artifact("model/requirements.txt")
 
+if mlflow.active_run() is None:
+    mlflow.start_run()
+
+run = mlflow.active_run()
+
 # =========================
 # LOG SEBAGAI MLFLOW MODEL (INI YANG PENTING)
 # =========================
