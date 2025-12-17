@@ -1,59 +1,74 @@
-name: MLflow CI Advanced
+# name: Data Preprocessing Workflow
+
+# on:
+#   push:
+#     branches: [ "main" ]
+
+# jobs:
+#   build:
+#     runs-on: ubuntu-latest
+#     steps:
+#     - uses: actions/checkout@v3
+#     - name: Set up Python
+#       uses: actions/setup-python@v4
+#       with:
+#         python-version: '3.9'
+#     - name: Install dependencies
+#       run: |
+#         pip install pandas numpy scikit-learn
+#     - name: Run Preprocessing
+#       run: python preprocessing/automate_Naurah.py
+
+name: CI Pipeline MLOps
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   workflow_dispatch:
 
+env:
+  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+  MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
+  MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
+  DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+
 jobs:
-  train-build-push:
+  build-and-train:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Repository
+    # Ambil Kode
+    - name: Checkout Code
       uses: actions/checkout@v3
 
+    # Setup Python
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: "3.9"
+        python-version: '3.9'
 
+    # Install MLflow & Dependencies
     - name: Install Dependencies
       run: |
-        pip install mlflow dagshub pandas scikit-learn matplotlib seaborn docker
+        pip install mlflow dagshub pandas scikit-learn joblib matplotlib seaborn
 
-    - name: Run MLflow Project (Training)
-      run: |
-        cd MLProject
-        mlflow run .
-
-    # =========================
-    # SAVE ARTIFACT TO GITHUB
-    # =========================
-    - name: Upload ML Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: mlflow-artifacts
-        path: MLProject/artifacts
-
-    # =========================
-    # BUILD DOCKER IMAGE
-    # =========================
-    - name: Build Docker Image with MLflow
-      run: |
-        mlflow models build-docker \
-          -m runs:/$(mlflow runs list --experiment-name Telco_Churn_CI --max-results 1 --output-format csv | tail -n 1 | cut -d',' -f1)/model \
-          -n naawra/telco-churn-mlflow
-
-    # =========================
-    # PUSH TO DOCKER HUB
-    # =========================
+    # Login ke Docker Hub (Syarat Advance)
     - name: Login to Docker Hub
       uses: docker/login-action@v2
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: Push Docker Image
+    # alankan MLflow Project (Training Otomatis)
+    - name: Run MLflow Project
       run: |
-        docker push naawra/telco-churn-mlflow
+        cd workflow-CI/MLProject
+        mlflow run . --env-manager=local
+
+    # Build Docker Image (Syarat Advance)
+    - name: Build & Push Docker Image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./workflow-CI/MLProject
+        push: true
+        tags: ${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops:latest
