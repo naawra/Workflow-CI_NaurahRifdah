@@ -2,7 +2,7 @@ name: CI Pipeline MLOps
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 env:
@@ -12,64 +12,86 @@ env:
   DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
 
 jobs:
-  build-and-train:
+  train-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-    # Ambil Kode
+    # =========================
+    # 1. Checkout Repository
+    # =========================
     - name: Checkout Code
       uses: actions/checkout@v3
 
-    # Setup Python
+    # =========================
+    # 2. Setup Python
+    # =========================
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
+        python-version: "3.9"
 
-    # Install MLflow & Dependencies
+    # =========================
+    # 3. Install Dependencies
+    # =========================
     - name: Install Dependencies
       run: |
-        pip install mlflow dagshub pandas scikit-learn joblib matplotlib seaborn
+        python -m pip install --upgrade pip
+        pip install \
+          mlflow \
+          dagshub \
+          pandas \
+          scikit-learn \
+          matplotlib \
+          seaborn
 
-    # Login ke Docker Hub (Syarat Advance)
+    # =========================
+    # 4. Login Docker Hub
+    # =========================
     - name: Login to Docker Hub
       uses: docker/login-action@v2
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    # alankan MLflow Project (Training Otomatis)
+    # =========================
+    # 5. Run MLflow Project (TRAINING)
+    # =========================
     - name: Run MLflow Project
       run: |
-        cd MLProject
-        mlflow run . --env-manager=local
+        mlflow run MLProject --env-manager=local
 
-    # Upload MLflow artifacts to GitHub Actions
-    - name: Upload MLflow artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: mlflow-artifacts
-        path: MLProject/mlruns
-
-    # Build Docker image from MLflow model and push to Docker Hub
-    - name: Build Docker image with MLflow
+    # =========================
+    # 6. Build Docker Image from MLflow Model
+    # =========================
+    - name: Build Docker Image with MLflow
       run: |
-        cd MLProject
-        
-        # 1. Ambil Run ID Terbaru
-        run_id=$(python -c "import mlflow; runs = mlflow.search_runs(max_results=1, order_by=['start_time DESC']); print(runs['run_id'][0])")
-        echo "Found Run ID: $run_id"
-        
-        if [ -z "$run_id" ]; then echo "No Run ID found"; exit 1; fi
+        # Ambil Run ID terbaru dari tracking server (DagsHub)
+        run_id=$(python - <<EOF
+        import mlflow
+        runs = mlflow.search_runs(max_results=1, order_by=["start_time DESC"])
+        print(runs["run_id"][0])
+        EOF
+                )
 
-        # 2. DEBUG: CEK ISI ARTIFAK (Penting!)
-        echo "=== ISI FOLDER ARTIFAK DI REMOTE ==="
-        python -c "import mlflow; client = mlflow.tracking.MlflowClient(); artifacts = client.list_artifacts('$run_id'); print([x.path for x in artifacts])"
-        echo "===================================="
+        echo "✅ Latest Run ID: $run_id"
 
-        # 3. Build Docker (Sementara kita arahkan ke 'model', nanti sesuaikan hasil debug)
-        mlflow models build-docker -m "runs:/$run_id/model" -n "${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops:latest"
-        
-    - name: Push Docker image to Docker Hub
+        # Debug isi artefak (HARUS ADA 'model/')
+        echo "📦 Artifact paths:"
+        python - <<EOF
+        import mlflow
+        client = mlflow.tracking.MlflowClient()
+        artifacts = client.list_artifacts("$run_id")
+        print([a.path for a in artifacts])
+        EOF
+
+        # Build Docker image dari MLflow Model
+        mlflow models build-docker \
+          -m "runs:/$run_id/model" \
+          -n "${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops:latest"
+
+    # =========================
+    # 7. Push Docker Image
+    # =========================
+    - name: Push Docker Image to Docker Hub
       run: |
         docker push ${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops:latest
