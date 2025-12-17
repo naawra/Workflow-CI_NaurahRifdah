@@ -62,13 +62,13 @@ jobs:
     # alankan MLflow Project (Training Otomatis)
     - name: Run MLflow Project
       run: |
-        cd workflow-CI/MLProject
+        cd MLProject
         mlflow run . --env-manager=local
 
     # Build Docker Image (Syarat Advance)
     - name: Build & Push Docker Image
       uses: docker/build-push-action@v4
       with:
-        context: ./workflow-CI/MLProject
+        context: MLProject
         push: true
         tags: ${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops:latest
