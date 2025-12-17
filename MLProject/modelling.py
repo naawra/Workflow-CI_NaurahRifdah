@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
+from mlflow.tracking import MlflowClient # Tambahkan ini untuk manajemen registry
 
 print("🚀 CI Training (Production Mode)")
 
@@ -66,7 +67,32 @@ with mlflow.start_run(run_id=run_id):
         "f1_score": f1
     })
 
-    mlflow.sklearn.log_model(model, "model")
+    # ======================
+    # Log & Register Model
+    # ======================
+    # Tambahkan parameter registered_model_name agar model masuk ke Registry
+    model_name = "Modelling-Advance"
+    model_info = mlflow.sklearn.log_model(
+        sk_model=model, 
+        artifact_path="model",
+        registered_model_name=model_name
+    )
+
+    # ======================
+    # Transition to Production
+    # ======================
+    # Bagian ini penting agar CI Pipeline bisa menemukan model di stage 'Production'
+    client = MlflowClient()
+    model_version = model_info.registered_model_version
+    
+    print(f"Mendaftarkan model {model_name} versi {model_version} ke stage Production...")
+    
+    client.transition_model_version_stage(
+        name=model_name,
+        version=model_version,
+        stage="Production",
+        archive_existing_versions=True # Mengarsip versi Production lama jika ada
+    )
 
     # ======================
     # Artifact: Confusion Matrix
@@ -81,4 +107,4 @@ with mlflow.start_run(run_id=run_id):
 
     mlflow.log_artifact(cm_path)
 
-print("✅ CI training & logging selesai")
+print(f"✅ CI training & mendaftarkan model ke Production selesai!")
