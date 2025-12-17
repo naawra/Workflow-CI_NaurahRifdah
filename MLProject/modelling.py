@@ -107,4 +107,15 @@ with mlflow.start_run(run_id=run_id):
 
     mlflow.log_artifact(cm_path)
 
+    fi_path = "artifacts/feature_importance.png"
+    feat_importances = pd.Series(model.feature_importances_, index=X_train.columns)
+    
+    plt.figure(figsize=(10,6))
+    feat_importances.nlargest(10).plot(kind='barh')
+    plt.title("Top 10 Feature Importances")
+    plt.savefig(fi_path)
+    plt.close()
+
+    mlflow.log_artifact(fi_path)
+
 print(f"✅ CI training & mendaftarkan model ke Production selesai!")
