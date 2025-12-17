@@ -66,9 +66,12 @@ jobs:
         mlflow run . --env-manager=local
 
     # Build Docker Image (Syarat Advance)
-    - name: Build & Push Docker Image
-      uses: docker/build-push-action@v4
-      with:
-        context: MLProject
-        push: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops:latest
+    - name: Build Docker Image via MLflow
+      run: |
+        mlflow models build-docker \
+          -m models:/Modelling-Advance/Production \
+          -n ${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops
+
+    - name: Push Docker Image
+      run: |
+        docker push ${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops
