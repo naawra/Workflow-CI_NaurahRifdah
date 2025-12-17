@@ -44,10 +44,23 @@ jobs:
         cd MLProject
         mlflow run . --env-manager=local
 
-    # Build Docker Image (Syarat Advance)
-    - name: Build & Push Docker Image
-      uses: docker/build-push-action@v4
+    # Upload MLflow artifacts to GitHub Actions
+    - name: Upload MLflow artifacts
+      uses: actions/upload-artifact@v3
       with:
-        context: ./MLProject
-        push: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops:latest
+        name: mlflow-artifacts
+        path: MLProject/mlruns
+
+    # Build Docker image from MLflow model and push to Docker Hub
+    - name: Build Docker image with MLflow
+      run: |
+        cd MLProject
+        latest_run_dir=$(ls -dt mlruns/*/* 2>/dev/null | head -n1)
+        if [ -z "$latest_run_dir" ]; then echo "No mlruns found"; exit 1; fi
+        run_id=$(basename "$latest_run_dir")
+        echo "Found run id: $run_id"
+        mlflow models build-docker -m "runs:/$run_id/model" -n "${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops:latest"
+
+    - name: Push Docker image to Docker Hub
+      run: |
+        docker push ${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops:latest
