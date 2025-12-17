@@ -56,18 +56,10 @@ jobs:
       run: |
         cd MLProject
         
-        # Mengambil Run ID terakhir langsung dari Metadata MLflow (DagsHub) via Python
-        # Kita sort berdasarkan waktu mulai (descending) dan ambil yang paling atas
-        run_id=$(python -c "import mlflow; runs = mlflow.search_runs(limit=1, order_by=['start_time DESC']); print(runs['run_id'][0])")
+        run_id=$(python -c "import mlflow; runs = mlflow.search_runs(max_results=1, order_by=['start_time DESC']); print(runs['run_id'][0])")
         
         echo "Found latest run id from Remote: $run_id"
         
-        # Validasi kalau run_id kosong
-        if [ -z "$run_id" ]; then echo "No Run ID found from MLflow Server"; exit 1; fi
+        if [ -z "$run_id" ]; then echo "No Run ID found"; exit 1; fi
         
-        # Build docker pakai referensi runs:/ (ini akan download model dari DagsHub)
         mlflow models build-docker -m "runs:/$run_id/model" -n "${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops:latest"
-        
-    - name: Push Docker image to Docker Hub
-      run: |
-        docker push ${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops:latest
