@@ -56,10 +56,20 @@ jobs:
       run: |
         cd MLProject
         
+        # 1. Ambil Run ID Terbaru
         run_id=$(python -c "import mlflow; runs = mlflow.search_runs(max_results=1, order_by=['start_time DESC']); print(runs['run_id'][0])")
-        
-        echo "Found latest run id from Remote: $run_id"
+        echo "Found Run ID: $run_id"
         
         if [ -z "$run_id" ]; then echo "No Run ID found"; exit 1; fi
-        
+
+        # 2. DEBUG: CEK ISI ARTIFAK (Penting!)
+        echo "=== ISI FOLDER ARTIFAK DI REMOTE ==="
+        python -c "import mlflow; client = mlflow.tracking.MlflowClient(); artifacts = client.list_artifacts('$run_id'); print([x.path for x in artifacts])"
+        echo "===================================="
+
+        # 3. Build Docker (Sementara kita arahkan ke 'model', nanti sesuaikan hasil debug)
         mlflow models build-docker -m "runs:/$run_id/model" -n "${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops:latest"
+        
+    - name: Push Docker image to Docker Hub
+      run: |
+        docker push ${{ secrets.DOCKER_USERNAME }}/telco-churn-mlops:latest
