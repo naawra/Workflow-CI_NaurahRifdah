@@ -1,148 +1,85 @@
+import os
+import pandas as pd
 import mlflow
 import mlflow.sklearn
-import pandas as pd
 import dagshub
-import os
-import json
 
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import (
-    accuracy_score,
-    confusion_matrix,
-    ConfusionMatrixDisplay,
-    classification_report
-)
-
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 import matplotlib.pyplot as plt
-import joblib
+import seaborn as sns
 
-# =========================
-# Init DagsHub + MLflow
-# =========================
+# ======================
+# DagsHub Init
+# ======================
 dagshub.init(
     repo_owner="naawra",
     repo_name="Submission_Eksperimen_SML_NaurahRifdah",
     mlflow=True
 )
 
-# =========================
-# Load Dataset (punyamu)
-# =========================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "telco_churn_preprocessed")
+# ======================
+# Load Dataset
+# ======================
+train_df = pd.read_csv("telco_churn_preprocessed/train_data.csv")
+test_df = pd.read_csv("telco_churn_preprocessed/test_data.csv")
 
-train_df = pd.read_csv(os.path.join(DATA_DIR, "train_data.csv"))
-test_df  = pd.read_csv(os.path.join(DATA_DIR, "test_data.csv"))
-
-X_train = train_df.drop("Churn", axis=1)
+X_train = train_df.drop(columns=["Churn"])
 y_train = train_df["Churn"]
-X_test  = test_df.drop("Churn", axis=1)
-y_test  = test_df["Churn"]
+X_test = test_df.drop(columns=["Churn"])
+y_test = test_df["Churn"]
 
-input_example = X_train.iloc[:5]
-
-# =========================
-# Model Training
-# =========================
+# ======================
+# Fixed Best Params (FROM KRITERIA 2)
+# ======================
 model = RandomForestClassifier(
-    n_estimators=300,
+    n_estimators=200,
     max_depth=20,
+    min_samples_split=2,
     random_state=42
 )
-model.fit(X_train, y_train)
 
-# =========================
-# Evaluation
-# =========================
-y_pred = model.predict(X_test)
-acc = accuracy_score(y_test, y_pred)
+# ======================
+# MLflow Tracking
+# ======================
+mlflow.set_experiment("Telco_Churn_CI")
 
-# =========================
-# Logging (PAKAI RUN AKTIF)
-# =========================
-run = mlflow.active_run()
-print("✅ Active Run ID:", run.info.run_id)
+with mlflow.start_run():
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
 
-mlflow.log_param("model_type", "RandomForest")
-mlflow.log_param("n_estimators", 300)
-mlflow.log_param("max_depth", 20)
-mlflow.log_metric("accuracy", acc)
+    acc = accuracy_score(y_test, y_pred)
+    prec = precision_score(y_test, y_pred)
+    rec = recall_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
 
-# =========================
-# Confusion Matrix (Artefak)
-# =========================
-os.makedirs("model", exist_ok=True)
+    mlflow.log_params({
+        "n_estimators": 200,
+        "max_depth": 20,
+        "min_samples_split": 2
+    })
 
-cm = confusion_matrix(y_test, y_pred)
-disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-disp.plot()
-plt.title("Confusion Matrix")
-plt.savefig("model/confusion_matrix.png")
-plt.close()
+    mlflow.log_metrics({
+        "accuracy": acc,
+        "precision": prec,
+        "recall": rec,
+        "f1_score": f1
+    })
 
-mlflow.log_artifact("model/confusion_matrix.png")
+    mlflow.sklearn.log_model(model, "model")
 
-# =========================
-# Classification Report (HTML)
-# =========================
-report_dict = classification_report(y_test, y_pred, output_dict=True)
+    # ======================
+    # Artifact: Confusion Matrix
+    # ======================
+    cm = confusion_matrix(y_test, y_pred)
 
-html_content = f"""
-<html>
-<head><title>Telco Churn Classification Report</title></head>
-<body>
-    <h2>Classification Report</h2>
-    <pre>{json.dumps(report_dict, indent=2)}</pre>
-</body>
-</html>
-"""
+    os.makedirs("artifacts", exist_ok=True)
+    plt.figure(figsize=(5,4))
+    sns.heatmap(cm, annot=True, fmt="d")
+    plt.title("Confusion Matrix")
+    plt.savefig("artifacts/confusion_matrix.png")
+    plt.close()
 
-with open("model/classification_report.html", "w") as f:
-    f.write(html_content)
+    mlflow.log_artifact("artifacts/confusion_matrix.png")
 
-mlflow.log_artifact("model/classification_report.html")
-
-# =========================
-# Metric JSON
-# =========================
-with open("model/metric_info.json", "w") as f:
-    json.dump({"accuracy": acc}, f)
-
-mlflow.log_artifact("model/metric_info.json")
-
-# =========================
-# Backup Model (file biasa)
-# =========================
-joblib.dump(model, "model/model.pkl")
-mlflow.log_artifact("model/model.pkl")
-
-# =========================
-# Requirements (Artefak)
-# =========================
-with open("model/requirements.txt", "w") as f:
-    f.write(
-        "scikit-learn\n"
-        "mlflow\n"
-        "joblib\n"
-        "matplotlib\n"
-        "pandas\n"
-    )
-
-mlflow.log_artifact("model/requirements.txt")
-
-if mlflow.active_run() is None:
-    mlflow.start_run()
-
-run = mlflow.active_run()
-
-# =========================
-# LOG SEBAGAI MLFLOW MODEL (INI YANG PENTING)
-# =========================
-mlflow.sklearn.log_model(
-    sk_model=model,
-    artifact_path="model",
-    input_example=input_example
-)
-
-print(f"🎯 Training selesai | Accuracy = {acc:.4f}")
-print("📦 Model + artefak sukses dicatat di MLflow")
+    print("CI training completed")
