@@ -1,121 +1,78 @@
-import os
 import pandas as pd
 import mlflow
 import mlflow.sklearn
 import dagshub
 import matplotlib.pyplot as plt
 import seaborn as sns
+import joblib
+import os
+from sklearn.model_selection import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
-from mlflow.tracking import MlflowClient # Tambahkan ini untuk manajemen registry
 
-print("🚀 CI Training (Production Mode)")
-
-# ======================
-# DagsHub Init
-# ======================
 dagshub.init(
     repo_owner="naawra",
     repo_name="Submission_Eksperimen_SML_NaurahRifdah",
     mlflow=True
 )
 
-# ======================
-# Attach to EXISTING run (from MLflow Project)
-# ======================
-run_id = os.environ.get("MLFLOW_RUN_ID")
-if run_id is None:
-    raise RuntimeError("MLFLOW_RUN_ID not found. This script must be run via mlflow run.")
-
-with mlflow.start_run(run_id=run_id):
-    # ======================
-    # Load Data
-    # ======================
+def run_advanced_tuning():
+    print("Menjalankan Tuning (Model + Gambar)...")
+    
     train_df = pd.read_csv("telco_churn_preprocessed/train_data.csv")
     test_df = pd.read_csv("telco_churn_preprocessed/test_data.csv")
+    X_train, y_train = train_df.drop("Churn", axis=1), train_df["Churn"]
+    X_test, y_test = test_df.drop("Churn", axis=1), test_df["Churn"]
 
-    X_train = train_df.drop("Churn", axis=1)
-    y_train = train_df["Churn"]
-    X_test = test_df.drop("Churn", axis=1)
-    y_test = test_df["Churn"]
-
-    # ======================
-    # Fixed Best Params
-    # ======================
-    model = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        random_state=42
-    )
-
-    # ======================
-    # Train
-    # ======================
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-
-    acc = accuracy_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred)
-
-    mlflow.log_params({
-        "n_estimators": 100,
-        "max_depth": 10
-    })
-
-    mlflow.log_metrics({
-        "accuracy": acc,
-        "f1_score": f1
-    })
-
-    # ======================
-    # Log & Register Model
-    # ======================
-    # Tambahkan parameter registered_model_name agar model masuk ke Registry
-    model_name = "Modelling-Advance"
-    model_info = mlflow.sklearn.log_model(
-        sk_model=model, 
-        artifact_path="model",
-        registered_model_name=model_name
-    )
-
-    # ======================
-    # Transition to Production
-    # ======================
-    # Bagian ini penting agar CI Pipeline bisa menemukan model di stage 'Production'
-    client = MlflowClient()
-    model_version = model_info.registered_model_version
+    # Param Grid
+    param_grid = {
+        'n_estimators': [50, 100],
+        'max_depth': [5, 10]
+    }
     
-    print(f"Mendaftarkan model {model_name} versi {model_version} ke stage Production...")
-    
-    client.transition_model_version_stage(
-        name=model_name,
-        version=model_version,
-        stage="Production",
-        archive_existing_versions=True # Mengarsip versi Production lama jika ada
-    )
+    # Mulai Run
+    with mlflow.start_run(run_name="Advance_Tuning_Complete"):
+        
+        print("Sedang mencari hyperparameter terbaik...")
+        grid_search = GridSearchCV(RandomForestClassifier(random_state=42), param_grid, cv=3)
+        grid_search.fit(X_train, y_train)
+        
+        best_model = grid_search.best_estimator_
+        y_pred = best_model.predict(X_test)
 
-    # ======================
-    # Artifact: Confusion Matrix
-    # ======================
-    os.makedirs("artifacts", exist_ok=True)
-    cm_path = "artifacts/confusion_matrix.png"
+        mlflow.log_params(grid_search.best_params_)
+        mlflow.log_metric("accuracy", accuracy_score(y_test, y_pred))
+        mlflow.log_metric("f1_score", f1_score(y_test, y_pred))
 
-    plt.figure(figsize=(6,4))
-    sns.heatmap(confusion_matrix(y_test, y_pred), annot=True, fmt="d")
-    plt.savefig(cm_path)
-    plt.close()
+        os.makedirs("artifacts", exist_ok=True)
 
-    mlflow.log_artifact(cm_path)
+        plt.figure(figsize=(5,4))
+        sns.heatmap(confusion_matrix(y_test, y_pred), annot=True, fmt="d", cmap="YlGnBu")
+        plt.title("Confusion Matrix")
+        plt.tight_layout()
+        plt.savefig("artifacts/confusion_matrix.png")
+        plt.close()
+        mlflow.log_artifact("artifacts/confusion_matrix.png")
 
-    fi_path = "artifacts/feature_importance.png"
-    feat_importances = pd.Series(model.feature_importances_, index=X_train.columns)
-    
-    plt.figure(figsize=(10,6))
-    feat_importances.nlargest(10).plot(kind='barh')
-    plt.title("Top 10 Feature Importances")
-    plt.savefig(fi_path)
-    plt.close()
+        plt.figure(figsize=(8,5))
 
-    mlflow.log_artifact(fi_path)
+        feat_importances = pd.Series(best_model.feature_importances_, index=X_train.columns)
+        feat_importances.nlargest(10).plot(kind='barh')
+        plt.title("Feature Importance")
+        plt.tight_layout()
+        plt.savefig("artifacts/feature_importance.png")
+        plt.close()
+        mlflow.log_artifact("artifacts/feature_importance.png")
+        
+        try:
+            mlflow.sklearn.log_model(best_model, "model_folder")
+        except Exception:
+            pass 
 
-print(f"✅ CI training & mendaftarkan model ke Production selesai!")
+        model_filename = "artifacts/best_model_tuned.pkl"
+        joblib.dump(best_model, model_filename)
+        mlflow.log_artifact(model_filename)
+        
+
+if __name__ == "__main__":
+    run_advanced_tuning()
