@@ -1,78 +1,75 @@
 import pandas as pd
 import mlflow
 import mlflow.sklearn
-import dagshub
-import matplotlib.pyplot as plt
-import seaborn as sns
-import joblib
-import os
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
+from sklearn.metrics import accuracy_score
+import os
 
-dagshub.init(
-    repo_owner="naawra",
-    repo_name="Submission_Eksperimen_SML_NaurahRifdah",
-    mlflow=True
+# Set URI ke folder lokal 'mlruns'
+mlflow.set_tracking_uri("")
+
+# Set Nama Eksperimen
+mlflow.set_experiment("Eksperimen_Lokal_Nawra")
+
+# --- KUNCI UTAMA: AKTIFKAN AUTOLOG DI SINI ---
+# Cukup satu baris ini, dia akan menghandle logging params, metrics, dan model.
+mlflow.sklearn.autolog(
+    log_models=True,       # Wajib simpan modelnya
+    log_input_examples=True, # Simpan contoh data (opsional tapi bagus)
+    log_model_signatures=True
 )
 
-def run_advanced_tuning():
-    print("Menjalankan Tuning (Model + Gambar)...")
+def load_data():
+    train_path = 'telco_churn_preprocessed/train_data.csv'
+    test_path = 'telco_churn_preprocessed/test_data.csv'
+
+    if not os.path.exists(train_path):
+        raise FileNotFoundError(f"File tidak ditemukan di: {train_path} !")
+
+    print("Memuat data... 📂")
+    train_df = pd.read_csv(train_path)
+    test_df = pd.read_csv(test_path)
+
+    target_col = 'Churn' 
     
-    train_df = pd.read_csv("telco_churn_preprocessed/train_data.csv")
-    test_df = pd.read_csv("telco_churn_preprocessed/test_data.csv")
-    X_train, y_train = train_df.drop("Churn", axis=1), train_df["Churn"]
-    X_test, y_test = test_df.drop("Churn", axis=1), test_df["Churn"]
+    X_train = train_df.drop(target_col, axis=1)
+    y_train = train_df[target_col]
+    X_test = test_df.drop(target_col, axis=1)
+    y_test = test_df[target_col]
 
-    # Param Grid
-    param_grid = {
-        'n_estimators': [50, 100],
-        'max_depth': [5, 10]
-    }
-    
-    # Mulai Run
-    with mlflow.start_run(run_name="Advance_Tuning_Complete"):
+    return X_train, X_test, y_train, y_test
+
+def train_basic_model():
+    try:
+        X_train, X_test, y_train, y_test = load_data()
+
+        # Inisialisasi Model
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
         
-        print("Sedang mencari hyperparameter terbaik...")
-        grid_search = GridSearchCV(RandomForestClassifier(random_state=42), param_grid, cv=3)
-        grid_search.fit(X_train, y_train)
+        print("Mulai training dengan Autolog... ⏳")
         
-        best_model = grid_search.best_estimator_
-        y_pred = best_model.predict(X_test)
+        # Mulai MLflow Run
+        # Kita tetap pakai start_run biar bisa kasih nama Run yang rapi
+        with mlflow.start_run(run_name="Run_Autolog_RandomForest"):
+            
+            # --- MAGIC HAPPENS HERE ---
+            # Karena autolog() sudah aktif di atas, saat .fit() jalan, 
+            # MLflow otomatis nyatet semua (param, metrik, model) ke folder mlruns.
+            model.fit(X_train, y_train)
 
-        mlflow.log_params(grid_search.best_params_)
-        mlflow.log_metric("accuracy", accuracy_score(y_test, y_pred))
-        mlflow.log_metric("f1_score", f1_score(y_test, y_pred))
+            # Prediksi (Hanya untuk print terminal, tidak perlu dilog manual lagi)
+            y_pred = model.predict(X_test)
+            acc = accuracy_score(y_test, y_pred)
+            
+            print(f"\n--- Hasil Training ---")
+            print(f"Accuracy (Terminal): {acc:.4f}")
+            
+            print("\n✅ SUKSES! Autolog sudah bekerja.")
+            print("Cek folder 'mlruns' atau buka 'mlflow ui'.")
 
-        os.makedirs("artifacts", exist_ok=True)
-
-        plt.figure(figsize=(5,4))
-        sns.heatmap(confusion_matrix(y_test, y_pred), annot=True, fmt="d", cmap="YlGnBu")
-        plt.title("Confusion Matrix")
-        plt.tight_layout()
-        plt.savefig("artifacts/confusion_matrix.png")
-        plt.close()
-        mlflow.log_artifact("artifacts/confusion_matrix.png")
-
-        plt.figure(figsize=(8,5))
-
-        feat_importances = pd.Series(best_model.feature_importances_, index=X_train.columns)
-        feat_importances.nlargest(10).plot(kind='barh')
-        plt.title("Feature Importance")
-        plt.tight_layout()
-        plt.savefig("artifacts/feature_importance.png")
-        plt.close()
-        mlflow.log_artifact("artifacts/feature_importance.png")
-        
-        try:
-            mlflow.sklearn.log_model(best_model, "model_folder")
-        except Exception:
-            pass 
-
-        model_filename = "artifacts/best_model_tuned.pkl"
-        joblib.dump(best_model, model_filename)
-        mlflow.log_artifact(model_filename)
-        
+    except Exception as e:
+        print(f"\nERROR: {e}")
 
 if __name__ == "__main__":
-    run_advanced_tuning()
+    train_basic_model()

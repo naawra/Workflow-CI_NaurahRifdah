@@ -2,7 +2,7 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-RUN pip install pandas scikit-learn mlflow dagshub joblib matplotlib seaborn
+RUN pip install pandas scikit-learn mlflow dagshub joblib matplotlib seaborn flask prometheus-client
 
 COPY . .
 
