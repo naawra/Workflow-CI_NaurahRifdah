@@ -1,22 +1,19 @@
 import pandas as pd
 import mlflow
 import mlflow.sklearn
+import matplotlib.pyplot as plt # Tamabahan buat gambar
+import seaborn as sns           # Tambahan buat gambar bagus
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, confusion_matrix # Tambah confusion matrix
 import os
 
-# Set URI ke folder lokal 'mlruns'
 mlflow.set_tracking_uri("")
-
-# Set Nama Eksperimen
 mlflow.set_experiment("Eksperimen_Lokal_Nawra")
 
-# --- KUNCI UTAMA: AKTIFKAN AUTOLOG DI SINI ---
-# Cukup satu baris ini, dia akan menghandle logging params, metrics, dan model.
 mlflow.sklearn.autolog(
-    log_models=True,       # Wajib simpan modelnya
-    log_input_examples=True, # Simpan contoh data (opsional tapi bagus)
+    log_models=True,
+    log_input_examples=True,
     log_model_signatures=True
 )
 
@@ -27,16 +24,13 @@ def load_data():
     if not os.path.exists(train_path):
         raise FileNotFoundError(f"File tidak ditemukan di: {train_path} !")
 
-    print("Memuat data... 📂")
     train_df = pd.read_csv(train_path)
     test_df = pd.read_csv(test_path)
-
-    target_col = 'Churn' 
     
-    X_train = train_df.drop(target_col, axis=1)
-    y_train = train_df[target_col]
-    X_test = test_df.drop(target_col, axis=1)
-    y_test = test_df[target_col]
+    X_train = train_df.drop('Churn', axis=1)
+    y_train = train_df['Churn']
+    X_test = test_df.drop('Churn', axis=1)
+    y_test = test_df['Churn']
 
     return X_train, X_test, y_train, y_test
 
@@ -47,26 +41,50 @@ def train_basic_model():
         # Inisialisasi Model
         model = RandomForestClassifier(n_estimators=100, random_state=42)
         
-        print("Mulai training dengan Autolog... ⏳")
+        print("Mulai training dengan Autolog + Artifak Gambar... ⏳")
         
-        # Mulai MLflow Run
-        # Kita tetap pakai start_run biar bisa kasih nama Run yang rapi
-        with mlflow.start_run(run_name="Run_Autolog_RandomForest"):
+        with mlflow.start_run(run_name="Run_Autolog_Plus_Artifacts"):
             
-            # --- MAGIC HAPPENS HERE ---
-            # Karena autolog() sudah aktif di atas, saat .fit() jalan, 
-            # MLflow otomatis nyatet semua (param, metrik, model) ke folder mlruns.
+            # Autolog bekerja di sini saat fit()
             model.fit(X_train, y_train)
 
-            # Prediksi (Hanya untuk print terminal, tidak perlu dilog manual lagi)
+            # Prediksi manual buat bikin grafik
             y_pred = model.predict(X_test)
             acc = accuracy_score(y_test, y_pred)
+            print(f"Accuracy: {acc:.4f}")
+
             
-            print(f"\n--- Hasil Training ---")
-            print(f"Accuracy (Terminal): {acc:.4f}")
+            # A. Gambar 1: Confusion Matrix
+            print("📸 Membuat Confusion Matrix...")
+            plt.figure(figsize=(6,5))
+            cm = confusion_matrix(y_test, y_pred)
+            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+            plt.title("Confusion Matrix")
+            plt.ylabel('Actual')
+            plt.xlabel('Predicted')
             
-            print("\n✅ SUKSES! Autolog sudah bekerja.")
-            print("Cek folder 'mlruns' atau buka 'mlflow ui'.")
+            # Simpan jadi file gambar 
+            plt.savefig("confusion_matrix.png") 
+            plt.close() 
+            
+            # Upload ke MLflow sebagai Artifak
+            mlflow.log_artifact("confusion_matrix.png")
+
+            # B. Gambar 2: Feature Importance
+            print("📸 Membuat Feature Importance...")
+            plt.figure(figsize=(8,6))
+            feat_importances = pd.Series(model.feature_importances_, index=X_train.columns)
+            feat_importances.nlargest(10).plot(kind='barh') # Ambil top 10
+            plt.title("Top 10 Feature Importance")
+            
+            # Simpan jadi file gambar
+            plt.savefig("feature_importance.png")
+            plt.close()
+            
+            # Upload ke MLflow
+            mlflow.log_artifact("feature_importance.png")
+
+    
 
     except Exception as e:
         print(f"\nERROR: {e}")
